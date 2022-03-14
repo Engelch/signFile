@@ -1,5 +1,10 @@
 //go:generate swagger generate spec
 
+// TODO: -q/-s for quiet mode
+// TODO: base64 default
+// TODO: currently no support for piped mode.
+// TODO: error without stack trace like message
+
 package main
 
 import (
@@ -12,10 +17,8 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const appVersion = "0.2.0"
+const appVersion = "0.2.1"
 const appName = "signfile"
-
-// TODO: currently no support for piped mode.
 
 // These CLI options are used more than once below. So let's use constants that we do not get
 // misbehaviour by typoos.
@@ -55,7 +58,11 @@ func verifySignature(c *cli.Context, filename string, basename string) error {
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":readfile:file " + pubKeyFile + ":" + err.Error())
 	}
-	err = ce.Verify115ByteArray(publicKey, signature, string(data))
+	if c.Bool(_v2) {
+		err = ce.VerifyPSSByteArray(publicKey, signature, string(data))
+	} else {
+		err = ce.Verify115ByteArray(publicKey, signature, string(data))
+	}
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":verification:" + err.Error() + ":" + err.Error())
 	}
@@ -79,7 +86,15 @@ func createSignature(c *cli.Context, filename string, basename string) error {
 		return errors.New(ce.CurrentFunctionName() + ":readfile:file " + privateKeyFile + ":" + err.Error())
 	}
 	digest := ce.Sha256bytes2bytes(data)
-	signature, err := ce.Sign115ByteArray(privateKey, digest)
+	var signature []byte
+	if c.Bool(_v2) {
+		signature, err = ce.SignPSSByteArray(privateKey, digest)
+	} else {
+		signature, err = ce.Sign115ByteArray(privateKey, digest)
+	}
+	if err != nil {
+		return errors.New(ce.CurrentFunctionName() + ":signing:" + err.Error())
+	}
 	fd, err := os.Create(sigFile) // overwrite file if existing.
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":create:file " + sigFile + ":" + err.Error())
