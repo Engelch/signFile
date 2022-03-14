@@ -8,6 +8,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -17,7 +18,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const appVersion = "0.2.1"
+const appVersion = "0.2.2"
 const appName = "signfile"
 
 // These CLI options are used more than once below. So let's use constants that we do not get
@@ -54,14 +55,18 @@ func verifySignature(c *cli.Context, filename string, basename string) error {
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":readfile:file " + sigFile + ":" + err.Error())
 	}
+	signaturePlain, err := base64.StdEncoding.DecodeString(string(signature))
+	if err != nil {
+		signaturePlain = signature
+	}
 	publicKey, err := ce.LoadPublicKey(pubKeyFile)
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":readfile:file " + pubKeyFile + ":" + err.Error())
 	}
 	if c.Bool(_v2) {
-		err = ce.VerifyPSSByteArray(publicKey, signature, string(data))
+		err = ce.VerifyPSSByteArray(publicKey, signaturePlain, string(data))
 	} else {
-		err = ce.Verify115ByteArray(publicKey, signature, string(data))
+		err = ce.Verify115ByteArray(publicKey, signaturePlain, string(data))
 	}
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":verification:" + err.Error() + ":" + err.Error())
