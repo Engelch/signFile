@@ -18,7 +18,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const appVersion = "0.2.2"
+const appVersion = "0.3.0"
 const appName = "signfile"
 
 // These CLI options are used more than once below. So let's use constants that we do not get
