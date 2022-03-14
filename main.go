@@ -1,9 +1,6 @@
 //go:generate swagger generate spec
 
-// TODO: -q/-s for quiet mode
-// TODO: base64 default
 // TODO: currently no support for piped mode.
-// TODO: error without stack trace like message
 
 package main
 
@@ -18,7 +15,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const appVersion = "0.3.0"
+const appVersion = "1.0.0"
 const appName = "signfile"
 
 // These CLI options are used more than once below. So let's use constants that we do not get
@@ -26,6 +23,7 @@ const appName = "signfile"
 const _debug = "debug"     // long (normal) name of CLI option
 const _logging = "logging" // long (normal) name of CLI option
 const _v2 = "v2"           // long (normal) name of CLI option
+const _raw = "raw"         // long (normal) name of CLI option for mode, write signature not base64 encoded
 
 var privateKeyFile string // file containing private key
 var pubKeyFile string     // file containing public key
@@ -105,9 +103,21 @@ func createSignature(c *cli.Context, filename string, basename string) error {
 		return errors.New(ce.CurrentFunctionName() + ":create:file " + sigFile + ":" + err.Error())
 	}
 	defer fd.Close()
-	n, err := fd.Write(signature)
-	if n != len(signature) {
-		return errors.New(ce.CurrentFunctionName() + ":write:file " + sigFile + ":len signature, written" + fmt.Sprintf("%d, %d", len(signature), n))
+	var n int
+	var length int
+	if c.Bool(_raw) {
+		length = len(signature)
+		n, err = fd.Write(signature)
+	} else {
+		b64signature := []byte(base64.StdEncoding.EncodeToString(signature))
+		length = len(b64signature)
+		n, err = fd.Write(b64signature)
+	}
+	if err != nil {
+		return errors.New(ce.CurrentFunctionName() + ":write, err:file " + sigFile + ":" + err.Error())
+	}
+	if n != length {
+		return errors.New(ce.CurrentFunctionName() + ":write, number of bytes:file " + sigFile + ":len signature, written" + fmt.Sprintf("%d, %d", len(signature), n))
 	}
 	return nil
 }
@@ -169,6 +179,12 @@ func commandLineOptions(privateKeyFile *string, pubKeyFile *string) []cli.Flag {
 			Value:   false,
 			Usage:   "use version 2, usually called by just OAEP and PSS instead of PKCS#1.\n The signature will have a suffix .sig2, else .sig",
 		},
+		&cli.BoolFlag{
+			Name:    _raw,
+			Aliases: []string{"r"},
+			Value:   false,
+			Usage:   "Write signature in pure form, not base64-encoded which is the default",
+		},
 		&cli.StringFlag{
 			Name:        "privateKeyFile",
 			Aliases:     []string{"i"},
@@ -182,6 +198,22 @@ func commandLineOptions(privateKeyFile *string, pubKeyFile *string) []cli.Flag {
 			Destination: pubKeyFile,
 		},
 	}
+}
+
+func warnUser(file string, errmsg string) {
+	fmt.Printf("%-30s FAILED! %s\n", file, errmsg)
+}
+
+func informUser(c *cli.Context, file string) {
+	if pubKeyFile != "" {
+		fmt.Printf("%-30s verification OK.\n", file)
+		return
+	}
+	var rawOption = ""
+	if c.Bool(_raw) {
+		rawOption = "raw "
+	}
+	fmt.Printf("%-30s %ssignature created.\n", file, rawOption)
 }
 
 // main start routine
@@ -207,20 +239,21 @@ func main() {
 			for i := 0; i < c.NArg(); i += 1 {
 				err = signOrVerify(c, c.Args().Get(i))
 				if err != nil {
-					ce.LogErr(err.Error())
+					warnUser(c.Args().Get(i), err.Error())
 					res += 1
+				} else {
+					informUser(c, c.Args().Get(i))
 				}
 			}
 		}
 		if res == 0 {
 			return nil
 		}
-		return errors.New("Number of errors occurred: " + fmt.Sprintf("%d\n", res))
+		fmt.Print("Number of errors occurred: " + fmt.Sprintf("%d\n", res))
+		os.Exit(1)
+		return nil // never reached
 	}
-	err := app.Run(os.Args)
-	if err != nil {
-		panic(err.Error())
-	}
+	_ = app.Run(os.Args)
 }
 
 // eof
