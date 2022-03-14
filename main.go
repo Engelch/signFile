@@ -15,15 +15,14 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const appVersion = "1.0.0"
+const appVersion = "1.1.0"
 const appName = "signfile"
 
 // These CLI options are used more than once below. So let's use constants that we do not get
 // misbehaviour by typoos.
-const _debug = "debug"     // long (normal) name of CLI option
-const _logging = "logging" // long (normal) name of CLI option
-const _v2 = "v2"           // long (normal) name of CLI option
-const _raw = "raw"         // long (normal) name of CLI option for mode, write signature not base64 encoded
+const _debug = "debug" // long (normal) name of CLI option
+const _v2 = "v2"       // long (normal) name of CLI option
+const _raw = "raw"     // long (normal) name of CLI option for mode, write signature not base64 encoded
 
 var privateKeyFile string // file containing private key
 var pubKeyFile string     // file containing public key
@@ -168,12 +167,6 @@ func commandLineOptions(privateKeyFile *string, pubKeyFile *string) []cli.Flag {
 			Usage:   "OPTIONAL: enable debug",
 		},
 		&cli.BoolFlag{
-			Name:    _logging,
-			Aliases: []string{"l"},
-			Value:   false,
-			Usage:   "OPTIONAL: log to syslog (default: stderr)",
-		},
-		&cli.BoolFlag{
 			Name:    _v2,
 			Aliases: []string{"2"},
 			Value:   false,
@@ -222,16 +215,10 @@ func main() {
 	app.Flags = commandLineOptions(&privateKeyFile, &pubKeyFile)
 	app.Name = appName
 	app.Version = appVersion
-	app.Usage = "signFile [-d] [-l] [-2] -i <<publicKeyFile>> <<file>>... # for signing"
-	app.Usage = "signFile [-d] [-l] [-2] -u <<publicKeyFile>> <<file>>... # for verification"
+	app.Usage = "\n      signFile [-d] [-r] [-2] -i <<publicKeyFile>> <<file>>... # for signing" +
+		"\n      signFile [-d]      [-2] -u <<publicKeyFile>> <<file>>... # for verification"
 
 	app.Action = func(c *cli.Context) error {
-		if c.Bool(_logging) {
-			ce.LogInit(app.Name)
-		} else {
-			ce.LogStringInit(app.Name)
-		}
-		// ce.LogInfo(app.Name + ":version " + appVersion + ":start") // this is no service
 		err := checkOptions(c, privateKeyFile, pubKeyFile)
 		ce.ExitIfError(err, 9, "checkOptions")
 		var res uint
