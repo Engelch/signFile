@@ -15,7 +15,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const appVersion = "1.1.0"
+const appVersion = "1.2.0"
 const appName = "signfile"
 
 // These CLI options are used more than once below. So let's use constants that we do not get
@@ -141,24 +141,47 @@ func signOrVerify(c *cli.Context, filename string) error {
 
 // =======================================================================================
 
+// createKeyPair creates a new keypair and writes it to <<outfileName>>. It is an error, if the
+// file <<outfileName>> or <<outfileName>>.pub already exists.
+// PRE: outfileName != ""
+func createKeyPair(outfileName string) error {
+	if err := ce.CreateRSAKeyPair2File(outfileName); err != nil {
+		return errors.New(ce.CurrentFunctionName() + ":" + err.Error())
+	}
+	return nil
+}
+
+// =======================================================================================
 // checkOptions checks the command line options if properly set or in range.
 // POST: exactly one keyfile is not mt.
-func checkOptions(c *cli.Context, privateKeyFile, pubKeyFile string) error {
+func checkOptions(c *cli.Context, privateKeyFile, pubKeyFile string, keypair string) error {
 	if c.Bool(_debug) {
 		ce.CondDebugSet(true)
 	}
 	ce.CondDebugln("Debug is enabled.")
+	if keypair != "" {
+		if pubKeyFile != "" || privateKeyFile != "" {
+			return errors.New("Public and private key cannot be set in key creation mode. Mode of operation unclear.")
+		}
+		if c.Bool(_v2) {
+			return errors.New("V2 mode signing does not apply to key creation. Mode of operation unclear.")
+		}
+		if c.Bool(_raw) {
+			return errors.New("raw mode signature creation does not apply to key creation. Mode of operation unclear.")
+		}
+		return nil
+	}
 	if pubKeyFile == "" && privateKeyFile == "" {
-		return errors.New("Public and prviate key file are not set. Mode of operation unclear.")
+		return errors.New("Public and private key file are not set. Mode of operation unclear.")
 	}
 	if pubKeyFile != "" && privateKeyFile != "" {
-		return errors.New("Public and prviate key file are set. Mode of operation unclear.")
+		return errors.New("Public and private key file are set. Mode of operation unclear.")
 	}
 	return nil
 }
 
 // commandLineOptions just separates the definition of command line options ==> creating a shorter main
-func commandLineOptions(privateKeyFile *string, pubKeyFile *string) []cli.Flag {
+func commandLineOptions(privateKeyFile *string, pubKeyFile *string, keypairName *string) []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:    _debug,
@@ -170,7 +193,7 @@ func commandLineOptions(privateKeyFile *string, pubKeyFile *string) []cli.Flag {
 			Name:    _v2,
 			Aliases: []string{"2"},
 			Value:   false,
-			Usage:   "use version 2, usually called by just OAEP and PSS instead of PKCS#1.\n The signature will have a suffix .sig2, else .sig",
+			Usage:   "use version 2, usually called by just OAEP and PSS instead of PKCS#1.\n                The signature will have a suffix .sig2, else .sig",
 		},
 		&cli.BoolFlag{
 			Name:    _raw,
@@ -189,6 +212,12 @@ func commandLineOptions(privateKeyFile *string, pubKeyFile *string) []cli.Flag {
 			Aliases:     []string{"u"},
 			Usage:       "Optional: specify the file with the public key for verification",
 			Destination: pubKeyFile,
+		},
+		&cli.StringFlag{
+			Name:        "createKeyPair",
+			Aliases:     []string{"c"},
+			Usage:       "Optional: create a key-pair",
+			Destination: keypairName,
 		},
 	}
 }
@@ -211,16 +240,24 @@ func informUser(c *cli.Context, file string) {
 
 // main start routine
 func main() {
+	var keypairName string
 	app := cli.NewApp() // global var, see discussion above
-	app.Flags = commandLineOptions(&privateKeyFile, &pubKeyFile)
+	app.Flags = commandLineOptions(&privateKeyFile, &pubKeyFile, &keypairName)
 	app.Name = appName
 	app.Version = appVersion
-	app.Usage = "\n      signFile [-d] [-r] [-2] -i <<publicKeyFile>> <<file>>... # for signing" +
-		"\n      signFile [-d]      [-2] -u <<publicKeyFile>> <<file>>... # for verification"
+	app.Usage = "create key-pairs, sign and verify files using V1 and V2 algorithms.\n" +
+		"\n      signFile [-d] [-r] [-2] -i <<publicKeyFile>> <<file>>... # for signing" +
+		"\n      signFile [-d]      [-2] -u <<publicKeyFile>> <<file>>... # for verification" +
+		"\n      signFile [-d] -c <<privateKeyName>> # key creation"
 
 	app.Action = func(c *cli.Context) error {
-		err := checkOptions(c, privateKeyFile, pubKeyFile)
+		err := checkOptions(c, privateKeyFile, pubKeyFile, keypairName)
 		ce.ExitIfError(err, 9, "checkOptions")
+		if keypairName != "" {
+			err = createKeyPair(keypairName)
+			ce.ExitIfError(err, 10, "Key creation")
+			return nil
+		}
 		var res uint
 		if c.NArg() > 0 {
 			for i := 0; i < c.NArg(); i += 1 {
