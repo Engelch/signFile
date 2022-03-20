@@ -5,6 +5,7 @@
 package main
 
 import (
+	"crypto/rsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-const appVersion = "1.2.0"
+const appVersion = "1.3.0"
 const appName = "signfile"
 
 // These CLI options are used more than once below. So let's use constants that we do not get
@@ -73,12 +74,8 @@ func verifySignature(c *cli.Context, filename string, basename string) error {
 
 // PRE: data-file existing and not a directory
 func createSignature(c *cli.Context, filename string, basename string) error {
-	var sigFile string
-	if c.Bool(_v2) {
-		sigFile = basename + ".sig2"
-	} else {
-		sigFile = basename + ".sig"
-	}
+
+	// open file and private key
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":readfile:file " + filename + ":" + err.Error())
@@ -87,17 +84,44 @@ func createSignature(c *cli.Context, filename string, basename string) error {
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":readfile:file " + privateKeyFile + ":" + err.Error())
 	}
-	digest := ce.Sha256bytes2bytes(data)
+	// create signature
+	signature, err := createSignature2(c, privateKey, data)
+	if err != nil {
+		return err
+	}
+	// write signature to file
+	if err = writeSignature2file(c, signature, basename); err != nil {
+		return err
+	}
+	return nil
+}
+
+func createSignature2(c *cli.Context, prvKey *rsa.PrivateKey, dataPtr []byte) ([]byte, error) {
+	digest := ce.Sha256bytes2bytes(dataPtr)
 	var signature []byte
+	var err error
 	if c.Bool(_v2) {
-		signature, err = ce.SignPSSByteArray(privateKey, digest)
+		signature, err = ce.SignPSSByteArray(prvKey, digest)
 	} else {
-		signature, err = ce.Sign115ByteArray(privateKey, digest)
+		signature, err = ce.Sign115ByteArray(prvKey, digest)
 	}
 	if err != nil {
-		return errors.New(ce.CurrentFunctionName() + ":signing:" + err.Error())
+		return nil, errors.New(ce.CurrentFunctionName() + ":signing:" + err.Error())
 	}
-	fd, err := os.Create(sigFile) // overwrite file if existing.
+	return signature, nil
+}
+
+func writeSignature2file(c *cli.Context, signature []byte, basename string) error {
+	var sigFile string
+
+	// check suffix for signature file
+	if c.Bool(_v2) {
+		sigFile = basename + ".sig2"
+	} else {
+		sigFile = basename + ".sig"
+	}
+	// create file, overwrite if already existing.
+	fd, err := os.Create(sigFile)
 	if err != nil {
 		return errors.New(ce.CurrentFunctionName() + ":create:file " + sigFile + ":" + err.Error())
 	}
@@ -161,21 +185,21 @@ func checkOptions(c *cli.Context, privateKeyFile, pubKeyFile string, keypair str
 	ce.CondDebugln("Debug is enabled.")
 	if keypair != "" {
 		if pubKeyFile != "" || privateKeyFile != "" {
-			return errors.New("Public and private key cannot be set in key creation mode. Mode of operation unclear.")
+			return errors.New("public and private key cannot be set in key creation mode. Mode of operation unclear")
 		}
 		if c.Bool(_v2) {
-			return errors.New("V2 mode signing does not apply to key creation. Mode of operation unclear.")
+			return errors.New("v2 mode signing does not apply to key creation. Mode of operation unclear")
 		}
 		if c.Bool(_raw) {
-			return errors.New("raw mode signature creation does not apply to key creation. Mode of operation unclear.")
+			return errors.New("raw mode signature creation does not apply to key creation. Mode of operation unclear")
 		}
 		return nil
 	}
 	if pubKeyFile == "" && privateKeyFile == "" {
-		return errors.New("Public and private key file are not set. Mode of operation unclear.")
+		return errors.New("public and private key file are not set. Mode of operation unclear")
 	}
 	if pubKeyFile != "" && privateKeyFile != "" {
-		return errors.New("Public and private key file are set. Mode of operation unclear.")
+		return errors.New("public and private key file are set. Mode of operation unclear")
 	}
 	return nil
 }
@@ -260,11 +284,11 @@ func main() {
 		}
 		var res uint
 		if c.NArg() > 0 {
-			for i := 0; i < c.NArg(); i += 1 {
+			for i := 0; i < c.NArg(); i++ {
 				err = signOrVerify(c, c.Args().Get(i))
 				if err != nil {
 					warnUser(c.Args().Get(i), err.Error())
-					res += 1
+					res++
 				} else {
 					informUser(c, c.Args().Get(i))
 				}
