@@ -1,0 +1,11 @@
+MIT
+- github.com/engelch/go_libs
+- github.com/urfave/cli
+- github.com/cpuguy83/go-md2man
+- github.com/shurcooL/sanitized_anchor_name
+
+
+Simplified BSD License
+- github.com/russross/blackfriday
+
+
